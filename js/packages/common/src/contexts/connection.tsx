@@ -16,6 +16,7 @@ import {
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { notify } from '../utils/notifications';
 import { ExplorerLink } from '../components/ExplorerLink';
+import { useQuerySearch } from '../hooks';
 import {
   TokenInfo,
   TokenListProvider,
@@ -79,7 +80,7 @@ interface ConnectionConfig {
 
 const ConnectionContext = React.createContext<ConnectionConfig>({
   endpoint: DEFAULT,
-  setEndpoint: () => {},
+  setEndpoint: () => { },
   connection: new Connection(DEFAULT, 'recent'),
   env: ENDPOINTS[0].name,
   tokens: [],
@@ -87,10 +88,16 @@ const ConnectionContext = React.createContext<ConnectionConfig>({
 });
 
 export function ConnectionProvider({ children = undefined as any }) {
-  const [endpoint, setEndpoint] = useLocalStorageState(
+  const searchParams = useQuerySearch();
+  const network = searchParams.get('network');
+  const queryEndpoint =
+    network && ENDPOINTS.find(({ name }) => name.startsWith(network))?.endpoint;
+
+  const [savedEndpoint, setEndpoint] = useLocalStorageState(
     'connectionEndpoint',
     ENDPOINTS[0].endpoint,
   );
+  const endpoint = queryEndpoint || savedEndpoint;
 
   const connection = useMemo(
     () => new Connection(endpoint, 'recent'),
@@ -109,7 +116,7 @@ export function ConnectionProvider({ children = undefined as any }) {
         .excludeByTag('nft')
         .filterByChainId(
           ENDPOINTS.find(end => end.endpoint === endpoint)?.ChainId ||
-            ChainId.MainnetBeta,
+          ChainId.MainnetBeta,
         )
         .getList();
 
@@ -129,7 +136,7 @@ export function ConnectionProvider({ children = undefined as any }) {
   useEffect(() => {
     const id = connection.onAccountChange(
       Keypair.generate().publicKey,
-      () => {},
+      () => { },
     );
     return () => {
       connection.removeAccountChangeListener(id);
@@ -279,7 +286,7 @@ export const sendTransactions = async (
   signersSet: Keypair[][],
   sequenceType: SequenceType = SequenceType.Parallel,
   commitment: Commitment = 'singleGossip',
-  successCallback: (txid: string, ind: number) => void = (txid, ind) => {},
+  successCallback: (txid: string, ind: number) => void = (txid, ind) => { },
   failCallback: (reason: string, ind: number) => boolean = (txid, ind) => false,
   block?: BlockhashAndFeeCalculator,
 ): Promise<number> => {
@@ -551,7 +558,7 @@ export async function sendSignedTransaction({
     }
 
     slot = confirmation?.slot || 0;
-  } catch (err) {
+  } catch (err: any) {
     console.error('Timeout Error caught', err);
     if (err.timeout) {
       throw new Error('Timed out awaiting confirmation on transaction');
@@ -561,7 +568,7 @@ export async function sendSignedTransaction({
       simulateResult = (
         await simulateTransaction(connection, signedTransaction, 'single')
       ).value;
-    } catch (e) {}
+    } catch (e) { }
     if (simulateResult && simulateResult.err) {
       if (simulateResult.logs) {
         for (let i = simulateResult.logs.length - 1; i >= 0; --i) {

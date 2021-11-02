@@ -1,4 +1,27 @@
 import { LAMPORTS_PER_SOL, AccountInfo } from '@solana/web3.js';
+import fs from 'fs';
+import weighted from 'weighted';
+import path from 'path';
+import { Program, web3 } from '@project-serum/anchor';
+import { Token, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+
+const { readFile } = fs.promises;
+
+export async function readJsonFile(fileName: string) {
+  const file = await readFile(fileName, 'utf-8');
+  return JSON.parse(file);
+}
+
+export const generateRandomSet = breakdown => {
+  const tmp = {};
+  Object.keys(breakdown).forEach(attr => {
+    const randomSelection = weighted.select(breakdown[attr]);
+    tmp[attr] = randomSelection;
+  });
+
+  return tmp;
+};
+
 export const getUnixTs = () => {
   return new Date().getTime() / 1000;
 };
@@ -47,14 +70,15 @@ export function fromUTF8Array(data: number[]) {
   return str;
 }
 
-export function chunks(array, size) {
-  return Array.apply(0, new Array(Math.ceil(array.length / size))).map(
-    (_, index) => array.slice(index * size, (index + 1) * size),
-  );
-}
-
 export function parsePrice(price: string, mantissa: number = LAMPORTS_PER_SOL) {
   return Math.ceil(parseFloat(price) * mantissa);
+}
+
+export function parseDate(date) {
+  if (date === 'now') {
+    return Date.now() / 1000;
+  }
+  return Date.parse(date) / 1000;
 }
 
 export const getMultipleAccounts = async (
@@ -90,6 +114,70 @@ export const getMultipleAccounts = async (
   return { keys, array };
 };
 
+export function chunks(array, size) {
+  return Array.apply(0, new Array(Math.ceil(array.length / size))).map(
+    (_, index) => array.slice(index * size, (index + 1) * size),
+  );
+}
+
+export function generateRandoms(
+  numberOfAttrs: number = 1,
+  total: number = 100,
+) {
+  const numbers = [];
+  const loose_percentage = total / numberOfAttrs;
+
+  for (let i = 0; i < numberOfAttrs; i++) {
+    const random = Math.floor(Math.random() * loose_percentage) + 1;
+    numbers.push(random);
+  }
+
+  const sum = numbers.reduce((prev, cur) => {
+    return prev + cur;
+  }, 0);
+
+  numbers.push(total - sum);
+  return numbers;
+}
+
+export const getMetadata = (
+  name: string = '',
+  symbol: string = '',
+  index: number = 0,
+  creators,
+  description: string = '',
+  seller_fee_basis_points: number = 500,
+  attrs,
+  collection,
+) => {
+  const attributes = [];
+  for (const prop in attrs) {
+    attributes.push({
+      trait_type: prop,
+      value: path.parse(attrs[prop]).name,
+    });
+  }
+  return {
+    name: `${name}${index + 1}`,
+    symbol,
+    image: `${index}.png`,
+    properties: {
+      files: [
+        {
+          uri: `${index}.png`,
+          type: 'image/png',
+        },
+      ],
+      category: 'image',
+      creators,
+    },
+    description,
+    seller_fee_basis_points,
+    attributes,
+    collection,
+  };
+};
+
 const getMultipleAccountsCore = async (
   connection: any,
   keys: string[],
@@ -111,4 +199,24 @@ const getMultipleAccountsCore = async (
 
   // TODO: fix
   throw new Error();
+};
+
+export const getPriceWithMantissa = async (
+  price: number,
+  mint: web3.PublicKey,
+  walletKeyPair: any,
+  anchorProgram: Program,
+): Promise<number> => {
+  const token = new Token(
+    anchorProgram.provider.connection,
+    new web3.PublicKey(mint),
+    TOKEN_PROGRAM_ID,
+    walletKeyPair,
+  );
+
+  const mintInfo = await token.getMintInfo();
+
+  const mantissa = 10 ** mintInfo.decimals;
+
+  return Math.ceil(price * mantissa);
 };

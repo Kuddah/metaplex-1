@@ -7,11 +7,13 @@ import {
 } from '../helpers/accounts';
 import { PublicKey } from '@solana/web3.js';
 import fs from 'fs';
-import BN from 'bn.js';
+import { BN } from '@project-serum/anchor';
 import { loadCache, saveCache } from '../helpers/cache';
 import log from 'loglevel';
+import { awsUpload } from '../helpers/upload/aws';
 import { arweaveUpload } from '../helpers/upload/arweave';
 import { ipfsCreds, ipfsUpload } from '../helpers/upload/ipfs';
+import { chunks } from '../helpers/various';
 
 export async function upload(
   files: string[],
@@ -21,7 +23,10 @@ export async function upload(
   totalNFTs: number,
   storage: string,
   retainAuthority: boolean,
+  mutable: boolean,
+  rpcUrl: string,
   ipfsCredentials: ipfsCreds,
+  awsS3Bucket: string,
 ): Promise<boolean> {
   let uploadSuccessful = true;
 
@@ -59,7 +64,7 @@ export async function upload(
   const SIZE = images.length;
 
   const walletKeyPair = loadWalletKey(keypair);
-  const anchorProgram = await loadCandyProgram(walletKeyPair, env);
+  const anchorProgram = await loadCandyProgram(walletKeyPair, env, rpcUrl);
 
   let config = cacheContent.program.config
     ? new PublicKey(cacheContent.program.config)
@@ -70,9 +75,10 @@ export async function upload(
     const imageName = path.basename(image);
     const index = imageName.replace(EXTENSION_PNG, '');
 
-    log.debug(`Processing file: ${i}`);
     if (i % 50 === 0) {
       log.info(`Processing file: ${i}`);
+    } else {
+      log.debug(`Processing file: ${i}`);
     }
 
     let link = cacheContent?.items?.[index]?.link;
@@ -95,7 +101,7 @@ export async function upload(
             maxNumberOfLines: new BN(totalNFTs),
             symbol: manifest.symbol,
             sellerFeeBasisPoints: manifest.seller_fee_basis_points,
-            isMutable: true,
+            isMutable: mutable,
             maxSupply: new BN(0),
             retainAuthority: retainAuthority,
             creators: manifest.properties.creators.map(creator => {
@@ -135,15 +141,18 @@ export async function upload(
             );
           } else if (storage === 'ipfs') {
             link = await ipfsUpload(ipfsCredentials, image, manifestBuffer);
+          } else if (storage === 'aws') {
+            link = await awsUpload(awsS3Bucket, image, manifestBuffer);
           }
 
           if (link) {
-            console.log('setting cache for ', index);
+            log.debug('setting cache for ', index);
             cacheContent.items[index] = {
               link,
               name: manifest.name,
               onChain: false,
             };
+            cacheContent.authority = walletKeyPair.publicKey.toBase58();
             saveCache(cacheName, env, cacheContent);
           }
         } catch (er) {
@@ -218,10 +227,4 @@ export async function upload(
   }
   console.log(`Done. Successful = ${uploadSuccessful}.`);
   return uploadSuccessful;
-}
-
-function chunks(array, size) {
-  return Array.apply(0, new Array(Math.ceil(array.length / size))).map(
-    (_, index) => array.slice(index * size, (index + 1) * size),
-  );
 }
